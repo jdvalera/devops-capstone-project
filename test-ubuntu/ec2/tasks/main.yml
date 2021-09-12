@@ -1,0 +1,103 @@
+---
+# tasks file for ec2
+- name: Installing boto & boto3 on local system
+  pip:
+    name: '{{ item }}'
+    state: present
+  loop: '{{ python_pkgs }}'
+
+- name: Creating Security Group for K8s Cluster
+  ec2_group:
+    name: '{{ sg_name }}'
+    description: Security Group for allowing all port
+    region: '{{ region_name }}'
+    aws_access_key: '{{ access_key }}'
+    aws_secret_key: '{{ secret_key }}'
+    rules:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+    rules_egress:
+      - proto: all
+        cidr_ip: 0.0.0.0/0
+
+- name: create a new ec2 key
+  ec2_key:
+    name: ansible
+    region: us-west-1
+    aws_access_key: '{{ access_key }}'
+    aws_secret_key: '{{ secret_key }}'
+    state: present
+  register: ec2_key
+
+- name: Save private key to disk
+  copy: content="{{ ec2_key.key.private_key }}" dest="./ansible.pem" mode=0600
+  when: ec2_key.changed
+
+- name: Launching three EC2 instances on AWS
+  ec2:
+    key_name: '{{ keypair }}'
+    instance_type: '{{ instance_flavour }}'
+    image: '{{ ami_id }}'
+    wait: true
+    group: '{{ sg_name }}'
+    count: 1
+    vpc_subnet_id: '{{ subnet_name }}'
+    assign_public_ip: yes
+    region: '{{ region_name }}'
+    state: present
+    aws_access_key: '{{ access_key }}'
+    aws_secret_key: '{{ secret_key }}'
+    instance_tags:
+      Name: '{{ item }}'
+  register: ec2
+  loop: '{{ instance_tag }}'
+
+- name: Create the ELB only listening over port 80
+  ec2_elb_lb:
+    name: frontend-load-balancer
+    state: present
+    region: '{{ region_name }}'
+    aws_access_key: '{{ access_key }}'
+    aws_secret_key: '{{ secret_key }}'
+    zones:
+      - us-west-1a
+      - us-west-1b
+    listeners:
+      - protocol: http
+        load_balancer_port: 80
+        instance_port: 30163
+  register: elb
+
+- name: Add each EC2 instance to the ELB
+  ec2_elb:
+    state: present
+    ec2_elbs: frontend-load-balancer
+    region: '{{ region_name }}'
+    aws_access_key: '{{ access_key }}'
+    aws_secret_key: '{{ secret_key }}'
+    instance_id: '{{ item }}'
+    wait: no
+  with_items:
+    - '{{ ec2.results[1].instances[0].id }}'
+    - '{{ ec2.results[2].instances[0].id }}'
+
+- name: Add 1st instance to host group ec2_master
+  add_host:
+    hostname: '{{ ec2.results[0].instances[0].public_ip }}'
+    groupname: ec2_master
+
+- name: Add 2nd instance to host group ec2_worker
+  add_host:
+    hostname: '{{ ec2.results[1].instances[0].public_ip }}'
+    groupname: ec2_worker
+
+- name: Add 3rd instance to host group ec2_worker
+  add_host:
+    hostname: '{{ ec2.results[2].instances[0].public_ip }}'
+    groupname: ec2_worker
+
+- name: Wait for SSH to come up
+  wait_for:
+    host: '{{ ec2.results[2].instances[0].public_dns_name }}'
+    port: 22
+    state: started

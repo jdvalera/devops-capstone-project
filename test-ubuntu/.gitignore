@@ -1,0 +1,4 @@
+cred.yml
+ansible.pem
+user_add.sh
+user_config.yml
