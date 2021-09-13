@@ -38,7 +38,7 @@ Given that online shopping experiences continue to evolve as per customer expect
 5. Run `ansible-playbook setup.yml`
 6. Wait until the EC2 instances are created and running
 
-## Implement Network Policies and Configure Application On The Pod
+## Implement Network Policies and Configure Application on the Pod
 
 1. The yaml files in the folder can all be applied which will setup a frontend, a redis backend, and a PHP page for load testing
 2. Most of the yaml files contain services inside them which will set up the network policies
